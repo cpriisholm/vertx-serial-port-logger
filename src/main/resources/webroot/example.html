@@ -1,0 +1,244 @@
+<html>
+<head>
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+
+  <style>
+    .wrapper {
+	width: 100%;
+	max-width: 899px;
+	margin: 0 auto;
+	display: grid;
+	grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+	grid-gap: 20px;
+    }
+    p { font-family: sans-serif }
+    div.gauge {  }
+    div.gauge p.label { margin: 0px; text-align: center; }
+    div.temp canvas { width: 150px; height: 150px;}
+    div.temp p.value { margin: 0px; text-align: center; position: relative; top: -35px; }
+    div.temp p.value:after { content: " ℃" }
+    div.power canvas { width: 150px; height: 150px; margin-top: -50px;}
+    div.power p.value { margin: 0px; text-align: center;  }
+    div.power p.value:after { content: " A" }
+  </style>
+</head>
+<body>
+<div class="wrapper">
+  <div class="gauge temp">
+    <p class="label">Pumperum</p>
+    <canvas id="pumpRoomTemp"></canvas>
+    <p class="value" id="pumpRoomTempText"></p>
+  </div>
+  <div class="gauge temp">
+    <p class="label">Fyrrum</p>
+    <canvas id="burnerRoomTemp"></canvas>
+    <p class="value" id="burnerRoomTempText"></p>
+  </div>
+  <div class="gauge temp">
+    <p class="label">Frem</p>
+    <canvas id="feedTemp"></canvas>
+    <p class="value" id="feedTempText"></p>
+  </div>
+  <div class="gauge temp">
+    <p class="label">Retur</p>
+    <canvas id="returnTemp"></canvas>
+    <p class="value" id="returnTempText"></p>
+  </div>
+  <div class="gauge temp">
+    <p class="label">Buffertank</p>
+    <canvas id="bufferTemp"></canvas>
+    <p class="value" id="bufferTempText"></p>
+  </div>
+  <div class="gauge power">
+    <p class="label">Fase 1</p>
+    <canvas id="powerL1"></canvas>
+    <p class="value" id="powerL1Text"></p>
+  </div>
+  <div class="gauge power">
+    <p class="label">Fase 2</p>
+    <canvas id="powerL2"></canvas>
+    <p class="value" id="powerL2Text"></p>
+  </div>
+  <div class="gauge power">
+    <p class="label">Fase 3</p>
+    <canvas id="powerL3"></canvas>
+    <p class="value" id="powerL3Text"></p>
+  </div>
+  <div class="status">
+    <p style="clear:both; padding:20px; font-size:80%;">Status: <span id="status">?</span></p>
+  </div>
+</div>
+
+  <script src="js/gauge.min.js"></script>
+  <script src="http://cdn.jsdelivr.net/sockjs/0.3.4/sockjs.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/vertx/3.4.2/vertx-eventbus.min.js"></script>
+  <script>
+    // Using gauges from http://bernii.github.io/gauge.js/
+    var commonOpts = {
+      animationSpeed: 32,
+      angle: -0.25, // The span of the gauge arc from -.5 (360 degrees) to .5 (0 degrees)
+      lineWidth: 0.15, // The line thickness
+      radiusScale: 0.8, // Relative radius
+      pointer: {
+        length: 0.5, // // Relative to gauge radius
+        strokeWidth: 0.035, // The thickness
+        color: '#666' // Fill color
+      },
+      limitMax: false,     // If false, max value increases automatically if value > maxValue
+      limitMin: false,     // If true, the min value of the gauge will be fixed
+      highDpiSupport: true     // High resolution support
+    };
+
+    var gauges = [];
+
+    var airTempOpts = JSON.parse(JSON.stringify(commonOpts)); // aka clone in js?
+    airTempOpts.staticZones = [
+      {strokeStyle: "#D0D0F0", min: -20, max: 0}, // Freeze
+      {strokeStyle: "#E0E0E0", min: 0, max: 40}
+    ];
+    airTempOpts.staticLabels = {
+      font: "10px sans-serif",  // Specifies font
+      labels: [-10,0,10,20,30],  // Print labels at these values
+      color: "#000000",  // Optional: Label text color
+      fractionDigits: 0  // Optional: Numerical precision. 0=round off.
+    };
+
+    gauges['temp_pump'] = new Gauge(document.getElementById('pumpRoomTemp')).setOptions(airTempOpts);
+    gauges['temp_pump'].setMinValue(-20);
+    gauges['temp_pump'].maxValue = 40; // setMaxValue() not a function...
+    gauges['temp_pump'].setTextField(document.getElementById("pumpRoomTempText"));
+    gauges['temp_pump'].set(-20); // must set initial value
+
+    gauges['temp_box'] = new Gauge(document.getElementById('burnerRoomTemp')).setOptions(airTempOpts);
+    gauges['temp_box'].setMinValue(-20);
+    gauges['temp_box'].maxValue = 40;
+    gauges['temp_box'].setTextField(document.getElementById("burnerRoomTempText"));
+    gauges['temp_box'].set(-20);
+
+    var waterTempOpts = JSON.parse(JSON.stringify(commonOpts));
+    waterTempOpts.staticZones = [
+      {strokeStyle: "#E0E0E0", min: 0, max: 28},
+      {strokeStyle: "#C0F0C0", min: 28, max: 46}, // Normal range
+      {strokeStyle: "#F0D0A0", min: 46, max: 50}
+    ];
+    waterTempOpts.staticLabels = {
+      font: "10px sans-serif",
+      labels: [10,20,28,32,36,40,44,48],
+      color: "#000000",
+      fractionDigits: 0
+    };
+
+    gauges['temp_feed'] = new Gauge(document.getElementById('feedTemp')).setOptions(waterTempOpts);
+    gauges['temp_feed'].minValue = 0;
+    gauges['temp_feed'].maxValue = 50;
+    gauges['temp_feed'].setTextField(document.getElementById("feedTempText"));
+    gauges['temp_feed'].set(0); // set actual value
+
+    gauges['temp_ret'] = new Gauge(document.getElementById('returnTemp')).setOptions(waterTempOpts);
+    gauges['temp_ret'].minValue = 0;
+    gauges['temp_ret'].maxValue = 50;
+    gauges['temp_ret'].setTextField(document.getElementById("returnTempText"));
+    gauges['temp_ret'].set(0); // set actual value
+
+    gauges['temp_tank'] = new Gauge(document.getElementById('bufferTemp')).setOptions(waterTempOpts);
+    gauges['temp_tank'].minValue = 0;
+    gauges['temp_tank'].maxValue = 50;
+    gauges['temp_tank'].setTextField(document.getElementById("bufferTempText"));
+    gauges['temp_tank'].set(0); // set actual value
+
+    var powerOpts = JSON.parse(JSON.stringify(commonOpts));
+    powerOpts.angle = 0.1;
+    powerOpts.radiusScale = 0.5;
+    powerOpts.staticZones = [
+      {strokeStyle: "#E0E0E0", min: 0, max: 8},
+      {strokeStyle: "#F0D0A0", min: 8, max: 16}
+    ];
+    powerOpts.staticLabels = {
+      font: "10px sans-serif",
+      labels: [2,4,6,8,10,12,14],
+      color: "#000000",
+      fractionDigits: 0
+    };
+
+    gauges['powr_l1'] = new Gauge(document.getElementById('powerL1')).setOptions(powerOpts);
+    gauges['powr_l1'].minValue = 0;
+    gauges['powr_l1'].maxValue = 16;
+    gauges['powr_l1'].setTextField(document.getElementById("powerL1Text"));
+    gauges['powr_l1'].set(0); // set actual value
+
+    gauges['powr_l2'] = new Gauge(document.getElementById('powerL2')).setOptions(powerOpts);
+    gauges['powr_l2'].minValue = 0;
+    gauges['powr_l2'].maxValue = 16;
+    gauges['powr_l2'].setTextField(document.getElementById("powerL2Text"));
+    gauges['powr_l2'].set(0); // set actual value
+
+    gauges['powr_l3'] = new Gauge(document.getElementById('powerL3')).setOptions(powerOpts);
+    gauges['powr_l3'].minValue = 0;
+    gauges['powr_l3'].maxValue = 16;
+    gauges['powr_l3'].setTextField(document.getElementById("powerL3Text"));
+    gauges['powr_l3'].set(0); // set actual value
+
+    var MAX_RETRY = 10;
+    var retryAttempts = 0;
+
+    function setupEventBus() {
+      var eb = new EventBus('http://heater.lan:9000/eventbus');
+
+      eb.onclose = function (e) {
+        Object.keys(gauges).forEach(function(key) {
+          gauges[key].set(gauges[key].minValue);
+        });
+
+        if(retryAttempts++ < MAX_RETRY) {
+          document.getElementById('status').innerHTML = 'Not connected, will retry...';
+          setTimeout(setupEventBus, 10000); // Give the server some time to come back
+        } else {
+          document.getElementById('status').innerHTML = 'Not connected, refresh page to try to connect...';
+        }
+      };
+
+      eb.onopen = function() {
+        // set a handler to receive a message
+        document.getElementById('status').innerHTML = 'Connected...';
+        retryAttempts = 0; // reset
+
+        eb.registerHandler('home.heatpump.data', function (error, message) {
+          //console.log('received a message: ' + JSON.stringify(message));
+
+          // For now the data structure is just a mirror of what comes from the arduino
+          var data = {};
+          var arr = JSON.parse(message.body);
+          arr.forEach(function(element) {
+            var key = element.t + '_' + element.s;
+            data[key] = element.d;
+          });
+
+          // Clearly decimal numbers at this point, so it is the gauges code that makes it integers
+          //Object.keys(data).forEach(function(key) {
+          //  console.log(key + " -> " + data[key]);
+          //});
+
+          // Check if there is new data for each gauge, if not set it to 0
+          Object.keys(gauges).forEach(function(key) {
+            if(data[key])
+              gauges[key].set(data[key]);
+            else
+              gauges[key].set(gauges[key].minValue);
+          });
+
+          document.getElementById('status').innerHTML = 'Refreshed at '+new Date();
+
+        });
+      };
+    }
+
+    setupEventBus();
+  </script>
+  </body>
+</html>
+
+
+
+
+
+

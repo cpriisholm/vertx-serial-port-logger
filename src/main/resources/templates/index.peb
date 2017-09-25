@@ -1,0 +1,203 @@
+<html>
+<head>
+  <title>Varmepumpe</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta charset="utf-8">
+  <style>
+    .wrapper {
+  	  width: 100%;
+  	  max-width: 830px; /* 5 * 150 + 4 * 20 */
+  	  margin: 0 auto;
+  	  display: grid;
+  	  grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+  	  grid-gap: 20px;
+    }
+    p { font-family: sans-serif }
+    div.gauge { }
+    div.gauge p.label { margin: 0px; text-align: center; }
+    div.temp canvas { width: 150px; height: 150px;}
+    div.temp p.value { margin: 0px; text-align: center; position: relative; top: -35px; }
+    div.temp p.value:after { content: " ℃" }
+    div.power canvas { width: 150px; height: 150px; margin-top: -50px;}
+    div.power p.value { margin: 0px; text-align: center;  }
+    div.power p.value:after { content: " A" }
+  </style>
+</head>
+<body>
+  <div class="wrapper">
+    {% set tempGaugesMarkup = [ { "id":"temp_pump", "label":"Pumperum" }, { "id":"temp_box", "label":"Fyrrum" }, { "id":"temp_feed", "label":"Frem" }, { "id":"temp_ret", "label":"Retur" }, { "id":"temp_tank", "label":"Buffertank" }, { "id":"temp_room", "label":"Stue" } ] %}
+    {% for g in tempGaugesMarkup %}
+    <div class="gauge temp">
+      <p class="label">{{ g.label }}</p>
+      <canvas id="{{ g.id }}"></canvas>
+      <p class="value" id="{{ g.id }}_txt"></p>
+    </div>
+    {% endfor %}
+    {% set powrGaugesMarkup = [ { "id":"powr_l1", "label":"Fase 1" }, { "id":"powr_l2", "label":"Fase 2" }, { "id":"powr_l3", "label":"Fase 3" } ] %}
+    {% for g in powrGaugesMarkup %}
+    <div class="gauge power">
+      <p class="label">{{ g.label }}</p>
+      <canvas id="{{ g.id }}"></canvas>
+      <p class="value" id="{{ g.id }}_txt"></p>
+    </div>
+    {% endfor %}
+    <p style="clear:both; padding:20px; font-size:80%;"><b>Status</b><br><span id="status">?</span></p>
+  </div>
+  <script src="/js/gauge.min.js"></script>
+  <script src="http://cdn.jsdelivr.net/sockjs/0.3.4/sockjs.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/vertx/3.4.2/vertx-eventbus.min.js"></script>
+  <script>
+    // Using gauges from http://bernii.github.io/gauge.js/
+    var commonOpts = {
+      animationSpeed: 32,
+      angle: -0.25, // The span of the gauge arc from -.5 (360 degrees) to .5 (0 degrees)
+      lineWidth: 0.15, // The line thickness
+      radiusScale: 0.8, // Relative radius
+      pointer: {
+        length: 0.5, // // Relative to gauge radius
+        strokeWidth: 0.035, // The thickness
+        color: '#666' // Fill color
+      },
+      limitMax: false,     // If false, max value increases automatically if value > maxValue
+      limitMin: false,     // If true, the min value of the gauge will be fixed
+      highDpiSupport: true     // High resolution support
+    };
+
+    var gauges = [];
+
+    var airTempOpts = JSON.parse(JSON.stringify(commonOpts)); // aka clone in js?
+    airTempOpts.staticZones = [
+      {strokeStyle: "#D0D0F0", min: -20, max: 0}, // Freeze
+      {strokeStyle: "#E0E0E0", min: 0, max: 40}
+    ];
+    airTempOpts.staticLabels = {
+      font: "10px sans-serif",  // Specifies font
+      labels: [-10,0,10,20,30],  // Print labels at these values
+      color: "#000000",  // Optional: Label text color
+      fractionDigits: 0  // Optional: Numerical precision. 0=round off.
+    };
+
+{% set airTempGauges = [ { "id":"temp_pump" }, { "id":"temp_box" }, { "id":"temp_room" } ] %}
+{% for g in airTempGauges %}
+    gauges['{{ g.id }}'] = new Gauge(document.getElementById('{{ g.id }}')).setOptions(airTempOpts);
+    gauges['{{ g.id }}'].setMinValue(-20);
+    gauges['{{ g.id }}'].maxValue = 40; // setMaxValue() not a function...
+    gauges['{{ g.id }}'].setTextField(document.getElementById('{{ g.id }}_txt'));
+    gauges['{{ g.id }}'].set(-20); // must set initial value
+
+{% endfor %}
+
+    var waterTempOpts = JSON.parse(JSON.stringify(commonOpts));
+    waterTempOpts.staticZones = [
+      {strokeStyle: "#E0E0E0", min: 0, max: 28},
+      {strokeStyle: "#C0F0C0", min: 28, max: 46}, // Normal range
+      {strokeStyle: "#F0D0A0", min: 46, max: 50}
+    ];
+    waterTempOpts.staticLabels = {
+      font: "10px sans-serif",
+      labels: [10,20,28,32,36,40,44,48],
+      color: "#000000",
+      fractionDigits: 0
+    };
+
+{% set waterTempGauges = [ { "id":"temp_feed" }, { "id":"temp_ret" }, { "id":"temp_tank" } ] %}
+{% for g in waterTempGauges %}
+    gauges['{{ g.id }}'] = new Gauge(document.getElementById('{{ g.id }}')).setOptions(waterTempOpts);
+    gauges['{{ g.id }}'].setMinValue(0);
+    gauges['{{ g.id }}'].maxValue = 50; // setMaxValue() not a function...
+    gauges['{{ g.id }}'].setTextField(document.getElementById('{{ g.id }}_txt'));
+    gauges['{{ g.id }}'].set(0); // must set initial value
+
+{% endfor %}
+
+    var powerOpts = JSON.parse(JSON.stringify(commonOpts));
+    powerOpts.angle = 0.1;
+    powerOpts.radiusScale = 0.5;
+    powerOpts.staticZones = [
+      {strokeStyle: "#E0E0E0", min: 0, max: 8},
+      {strokeStyle: "#F0D0A0", min: 8, max: 16}
+    ];
+    powerOpts.staticLabels = {
+      font: "10px sans-serif",
+      labels: [2,4,6,8,10,12,14],
+      color: "#000000",
+      fractionDigits: 0
+    };
+
+{% set powerTempGauges = [ { "id":"powr_l1" }, { "id":"powr_l2" }, { "id":"powr_l3" } ] %}
+{% for g in powerTempGauges %}
+    gauges['{{ g.id }}'] = new Gauge(document.getElementById('{{ g.id }}')).setOptions(powerOpts);
+    gauges['{{ g.id }}'].setMinValue(0);
+    gauges['{{ g.id }}'].maxValue = 16; // setMaxValue() not a function...
+    gauges['{{ g.id }}'].setTextField(document.getElementById('{{ g.id }}_txt'));
+    gauges['{{ g.id }}'].set(0); // must set initial value
+
+{% endfor %}
+
+    var MAX_RETRY = 10;
+    var retryAttempts = 0;
+    var thermoMotor = false; // this is necessary to keep value between bus messages
+
+    function setupEventBus() {
+      {# Vertx documentation say context.clientBusAddress should work, it doesn't...
+         either do context.get("clientBusAddress") or context.map.clientBusAddress #}
+      var eb = new EventBus('{{ context.get("eventBusUrl") }}');
+
+      eb.onclose = function (e) {
+        Object.keys(gauges).forEach(function(key) {
+          gauges[key].set(gauges[key].minValue);
+        });
+
+        if(retryAttempts++ < MAX_RETRY) {
+          document.getElementById('status').innerHTML = 'Ikke forbundet med server, forsøger at forbinde...';
+          setTimeout(setupEventBus, {{ context.get("reconnectInterval") }}); // Give the server some time to come back
+        } else {
+          document.getElementById('status').innerHTML = 'Ikke forbundet med server, opdater siden for at forbinde...';
+        }
+      };
+
+      eb.onopen = function() {
+        // set a handler to receive a message
+        document.getElementById('status').innerHTML = 'Forbundet med server...';
+        retryAttempts = 0; // reset
+
+        eb.registerHandler('{{ context.get("eventBusAddress") }}', function (error, message) {
+          //console.log('received a message: ' + JSON.stringify(message));
+
+          // For now the data structure is just a mirror of what comes from the arduino
+          var data = {};
+          var arr = JSON.parse(message.body);
+          arr.forEach(function(element) {
+            var key = element.t + '_' + element.s;
+            data[key] = element.d;
+          });
+
+          // Clearly decimal numbers at this point, so it is the gauges code that makes it integers
+          //Object.keys(data).forEach(function(key) {
+          //  console.log(key + " -> " + data[key]);
+          //});
+
+          // Check if there is new data for each gauge, if not set it to 0
+          Object.keys(gauges).forEach(function(key) {
+            if(data[key])
+              gauges[key].set(data[key]);
+            // Data sets may be partial and thus setting to min here is no longer useful:
+            //else
+            //  gauges[key].set(gauges[key].minValue);
+          });
+
+          if(data['temp_thmo']!=null)
+            thermoMotor = (data['temp_thmo'] > 1);
+
+          var msg = 'Sidst opdateret:<br>'+new Date().toLocaleString();
+          msg += '<br>Gulvarmeventil: ' + (thermoMotor ? 'ÅBEN' : 'lukket');
+          document.getElementById('status').innerHTML = msg;
+
+        });
+      };
+    }
+
+    setupEventBus();
+  </script>
+  </body>
+</html>

@@ -1,0 +1,81 @@
+plugins {
+  id 'groovy'
+  id 'application'
+  id 'com.github.johnrengelman.shadow' version '1.2.3'
+}
+
+repositories {
+  jcenter()
+}
+
+version = '1.6'
+mainClassName = 'io.vertx.core.Launcher' // or 'dk.codedroids.home.heatpump.MainVerticle'
+
+def vertxVersion = '3.4.2'
+def mainVerticleName = 'dk.codedroids.home.heatpump.MainVerticle'
+def watchForChange = 'src/**/*'
+def doOnChange = './gradlew classes'
+
+dependencies {
+  compile group: 'org.codehaus.groovy', name: 'groovy-all', version: '2.4.12'
+  compile "io.vertx:vertx-core:$vertxVersion"
+  compile "io.vertx:vertx-hazelcast:$vertxVersion"
+  compile "io.vertx:vertx-web:$vertxVersion"
+  compile "io.vertx:vertx-web-templ-pebble:$vertxVersion"
+  compile "io.vertx:vertx-lang-groovy:$vertxVersion"
+  compile "io.vertx:vertx-jdbc-client:$vertxVersion"
+  compile "io.vertx:vertx-mqtt-server:$vertxVersion"
+  //compile group: 'org.rxtx', name: 'rxtx', version: '2.2pre2', ext: 'pom'
+  // openSUSE has this in a number of extra repos - Education and CrossToolChain:avr among others (:
+  // zypper ar --name Education --refresh http://download.opensuse.org/repositories/Education/openSUSE_Leap_42.2/ education
+  // zypper install rxtx-java
+  compile files('/usr/share/java/RXTXcomm.jar')
+  testCompile "junit:junit:4.12"
+  testCompile "io.vertx:vertx-unit:$vertxVersion"
+  compile group: 'commons-cli', name: 'commons-cli', version: '1.4'
+  runtime group: 'org.mariadb.jdbc', name: 'mariadb-java-client', version: '1.2.0'
+  testCompile group: 'org.spockframework', name: 'spock-core', version: '1.1-groovy-2.4'
+  testCompile group: 'org.hsqldb', name: 'hsqldb', version: '2.3.2'
+
+}
+
+sourceCompatibility = '1.8'
+sourceSets.main.java.srcDirs = []
+sourceSets.main.groovy.srcDirs += ["src/main/java"]
+/*
+processResources {
+  from 'src/main/groovy'
+}*/
+
+shadowJar {
+  classifier = 'fat'
+  manifest {
+      attributes "Main-Verticle": mainVerticleName
+  }
+  mergeServiceFiles {
+    include 'META-INF/services/io.vertx.core.spi.VerticleFactory'
+  }
+  dependencies {
+    exclude(dependency('io.vertx:codegen'))
+    exclude(dependency('junit:junit'))
+    exclude(dependency('org.mvel:mvel2'))
+    // This is to force netty to use JUL instead of thinking that either of these are present:
+    exclude(dependency('log4j:log4j'))
+    exclude(dependency('slf4j:slf4j'))
+  }
+}
+
+run {
+  args = ['run', mainVerticleName, "--redeploy=$watchForChange", "--launcher-class=$mainClassName", "--on-redeploy=$doOnChange"]
+}
+
+task wrapper(type: Wrapper) {
+  gradleVersion = '4.0'
+}
+
+test {
+  reports {
+    junitXml.enabled = false
+    html.enabled = true
+  }
+}

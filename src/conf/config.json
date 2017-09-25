@@ -1,0 +1,66 @@
+{
+  "deploy_verticles" : [
+    {
+      "label": "Heat Pump Serial monitor",
+      "instances": 0,
+      "verticle": "dk.codedroids.home.heatpump.SerialVerticle",
+      "config" : {
+        "event_bus": "home.heatpump.data.test",
+        "serial_port": "/dev/ttyACM3",
+        "verbose": true
+      }
+    },
+    {
+      "label": "Heat Pump Logger (only logging)",
+      "instances" : 1,
+      "verticle": "dk.codedroids.home.heatpump.LoggerVerticle",
+      "config" : {
+        "event_bus" : "home.heatpump.data.replay"
+      }
+    },
+    {
+      "label": "Heat Pump Logger (storing data)",
+      "instances" : 0,
+      "verticle": "dk.codedroids.home.heatpump.LoggerVerticle",
+      "config" : {
+        "event_bus" : "home.heatpump.data.test",
+        "database": {
+          "url": "jdbc:mariadb://localhost:3306/test",
+          "user": "...",
+          "password": "...",
+          "driver_class": "org.mariadb.jdbc.Driver",
+          "max_pool_size": 10
+        }
+      }
+    },
+    {
+      "label": "Heat Pump Panel",
+      "instances" : 1,
+      "verticle": "dk.codedroids.home.heatpump.PanelVerticle",
+      "config" : {
+        "event_bus": "home.heatpump.data.replay",
+        "event_bus_url": "http://localhost:9000/eventbus",
+        "reconnect_interval": 10,
+        "http_caching": false,
+        "http_port": 9000
+      }
+    },
+    {
+      "label": "Heat Pump Replay verticle",
+      "instances" : 1,
+      "verticle": "dk.codedroids.home.heatpump.ReplayVerticle",
+      "config" : {
+        "event_bus": "home.heatpump.data.replay",
+        "sample_interval": 1,
+        "start_time": "2017-01-16 00:00:00",
+        "database": {
+          "url": "jdbc:mariadb://gerty.lan:3306/test",
+          "user": "...",
+          "password": "...",
+          "driver_class": "org.mariadb.jdbc.Driver",
+          "max_pool_size": 10
+        }
+      }
+    }
+  ]
+}

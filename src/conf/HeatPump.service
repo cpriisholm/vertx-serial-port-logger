@@ -1,0 +1,55 @@
+#
+# For starting HeatPump fat jar
+#
+# copy to /etc/systemd/system
+#
+
+[Unit]
+Description=HeatPump
+After=syslog.target network.target
+
+[Service]
+Type=simple
+User=riddler
+Group=users
+
+Restart=on-failure
+TimeoutStartSec=15
+RestartSec=15
+
+
+# This directory is used to serve files contained in jar files (for example web assets packaged in a fat jar).
+# If you are not using this feature, you can disable the creation of this directory by setting the
+# vertx.disableFileCPResolving system property to true.
+# You can also change the location using the vertx.cacheDirBase system property.
+#
+#-Dvertx.disableFileCPResolving=true
+#-Dvertx.cacheDirBase=/var/cache/heatpump (latter must exist and be writable)
+#mkdir -p /var/cache/heatpump
+#chown ...:.. /var/cache/heatpump
+#
+# Also, on the old Raspberry model B the cluster startup takes quite some time so to prevent noise in the log during
+# startup, alert times are set to 10 sec - 10_000_0000_000 nanosec.
+#Environment='VERTX_OPTS=-Dvertx.cacheDirBase=/var/cache/heatpump -Dvertx.options.maxEventLoopExecuteTime=10000000000'
+Environment='VERTX_OPTS='-Dvertx.cacheDirBase=/var/cache/heatpump'
+Environment='CLASSPATH=/opt/apps/heatpump/'
+Environment='JAVA_OPTS=-Djava.awt.headless=true -Xmx128M -Djava.security.egd=file:/dev/./urandom'
+# ditto, but with remote debug enabled:
+#Environment='JAVA_OPTS=-Djava.awt.headless=true -Xmx128M -Djava.security.egd=file:/dev/./urandom -Dcom.sun.management.jmxremote=true -Dcom.sun.management.jmxremote.port=1099 -Dcom.sun.management.jmxremote.ssl=false -Dcom.sun.management.jmxremote.authenticate=false'
+
+#Environment='LOG_OPTS=-Djava.util.logging.config.file=.../jul-logging.properties'
+
+# Note -cp must be after the jar for it to be read by vertx... And ${VERTX_OPTS} is not the same as $VERTX_OPTS !!!
+#
+ExecStart=/usr/bin/java $JAVA_OPTS $VERTX_OPTS -jar /opt/apps/heatpump/heatpump-1.6-fat.jar -cp="${CLASSPATH}" -conf /opt/apps/heatpump/config.json -cluster -cluster-port 5700
+
+#ExecStop=/bin/kill -15 $MAINPID
+
+# taken from openSUSE:
+StandardOutput=syslog
+SyslogIdentifier=%n
+SyslogFacility=daemon
+SuccessExitStatus=143
+
+[Install]
+WantedBy=multi-user.target
