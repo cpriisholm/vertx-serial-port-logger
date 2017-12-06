@@ -19,14 +19,25 @@
 package dk.codedroids.home.heatpump;
 
 import io.vertx.core.AbstractVerticle;
+import io.vertx.core.buffer.Buffer;
 import io.vertx.core.eventbus.EventBus;
+import io.vertx.core.file.AsyncFile;
+import io.vertx.core.file.OpenOptions;
 import io.vertx.core.json.JsonArray;
 import io.vertx.core.Future;
 import io.vertx.core.Handler;
 import io.vertx.core.AsyncResult;
 import io.vertx.core.json.JsonObject;
+import io.vertx.core.parsetools.RecordParser;
 import io.vertx.ext.jdbc.JDBCClient;
 import io.vertx.ext.sql.SQLConnection;
+
+import java.io.BufferedReader;
+import java.io.File;
+import java.io.IOException;
+import java.nio.file.FileSystems;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.text.SimpleDateFormat;
 import java.util.Date;
 
@@ -34,11 +45,15 @@ import io.vertx.core.logging.Logger;
 import io.vertx.core.logging.LoggerFactory;
 
 /**
+ * Intended for replaying recorded data from the database or from a text file. Mostly for testing.
+ * <p>
+ *     The configuration must define either a <b>database</b> or a <b>text_file</b>.
+ * </p>
  * Configuration :
  *
  * <ul>
  * <li><b>event_bus : "home.heatpump.data"</b> -- Eventbus address</li>
- * <li><b>sample_interval : 10</b> -- Number of seconds between events - defaults to 10 seconds which is the actually sampling interval in hardware</li>
+ * <li><b>sample_interval : 10</b> -- Number of seconds between events - defaults to 10 seconds which is the actually sampling interval used by the microcontroller.</li>
  * <li><b>start_time : "2017-01-01 00:00:00"</b> -- Start replay from the given timestamp (defaults to "2017-01-01 00:00:00")</li>
  * <li><b>database :</b>
  *    <ul>
@@ -49,6 +64,7 @@ import io.vertx.core.logging.LoggerFactory;
  *        <li><b>max_pool_size : 10</b> -- max. size of the connection pool, defaults to 10</li>
  *    </ul>
  * </li>
+ * <li><b>text_file : "/tmp/records.txt"</b> -- file with one message per line (send to event bus as is)</li>
  * </ul>
  *
  * @author Claus Priisholm.
@@ -56,20 +72,21 @@ import io.vertx.core.logging.LoggerFactory;
 public class ReplayVerticle extends AbstractVerticle {
 
 
-  final String SQL_TEMP = "select sensor, data from pump_temperature where ts >= ? and ts < ?";
-  final String SQL_POWR = "select sensor, data from pump_current where ts >= ? and ts < ?";
+  private final String SQL_TEMP = "select sensor, data from pump_temperature where ts >= ? and ts < ?";
+  private final String SQL_POWR = "select sensor, data from pump_current where ts >= ? and ts < ?";
 
-  final SimpleDateFormat timestampFormatter = new SimpleDateFormat("yyyy-MM-dd HH:mm:ss");
+  private final SimpleDateFormat timestampFormatter = new SimpleDateFormat("yyyy-MM-dd HH:mm:ss");
 
-  final Logger LOG = LoggerFactory.getLogger(this.getClass());
+  private final Logger LOG = LoggerFactory.getLogger(this.getClass());
 
-  String eventBusAddress;
-  String startTime;
-  int sampleInterval;
-  long time; // set to startTime and then incremented by 'interval' during the timer callback
-  JDBCClient client = null;
+  private String eventBusAddress;
+  private String startTime;
+  private int sampleInterval;
+  private long time; // set to startTime and then incremented by 'interval' during the timer callback
+  private JDBCClient client = null;
+  private BufferedReader textFileReader = null;
 
-  long timerID;
+  private long timerID;
 
   @Override
   public void start() {
@@ -78,8 +95,11 @@ public class ReplayVerticle extends AbstractVerticle {
       LOG.debug("ReplayVerticle starting with config: " + config().encodePrettily());
 
     JsonObject databaseConfig = config().getJsonObject("database");
-    if (databaseConfig == null)
-      throw new IllegalArgumentException("Invalid configuration, 'database' is missing for ReplayVerticle");
+    String textFile = config().getString("text_file");
+    if (databaseConfig == null && textFile == null)
+      throw new IllegalArgumentException("Invalid configuration, either 'database' or 'text_file' is missing for ReplayVerticle");
+    else if (databaseConfig != null && textFile != null)
+      throw new IllegalArgumentException("Invalid configuration, only one of 'database' or 'text_file' must be given for ReplayVerticle");
 
     eventBusAddress = config().getString("event_bus", "home.heatpump.playback");
     startTime = config().getString("start_time", "2017-01-01 00:00:00");
@@ -90,28 +110,64 @@ public class ReplayVerticle extends AbstractVerticle {
       throw new RuntimeException("Failed to parse start_time: " + startTime, e);
     }
 
-    client = JDBCClient.createShared(vertx, new JsonObject()
-      .put("url", databaseConfig.getString("url"))
-      .put("user", databaseConfig.getString("user"))
-      .put("password", databaseConfig.getString("password"))
-      .put("driver_class", databaseConfig.getString("driver_class"))
-      .put("max_pool_size", databaseConfig.getInteger("pool_size", 10))
-    );
-
     EventBus eventBus = vertx.eventBus();
 
-    timerID = vertx.setPeriodic(sampleInterval * 1000L,  tid -> {
-      getNextData( arDataSet -> {
-        if (arDataSet.failed()) {
-          LOG.error("getNextData() failed: " + arDataSet.cause().getMessage());
-        } else {
-          JsonArray dataSet = arDataSet.result();
-          if (LOG.isTraceEnabled())
-           LOG.trace(dataSet);
-          eventBus.publish(eventBusAddress, dataSet.encode()/*groovy.json.JsonOutput.toJson(dataSet)*/);
-        }
+    if(databaseConfig != null) {
+      client = JDBCClient.createShared(vertx, new JsonObject()
+        .put("url", databaseConfig.getString("url"))
+        .put("user", databaseConfig.getString("user"))
+        .put("password", databaseConfig.getString("password"))
+        .put("driver_class", databaseConfig.getString("driver_class"))
+        .put("max_pool_size", databaseConfig.getInteger("pool_size", 10))
+      );
+      timerID = vertx.setPeriodic(sampleInterval * 1000L,  tid -> {
+        getNextData( arDataSet -> {
+          if (arDataSet.failed()) {
+            LOG.error("getNextData() failed: " + arDataSet.cause().getMessage());
+          } else {
+            JsonArray dataSet = arDataSet.result();
+            if (LOG.isTraceEnabled())
+             LOG.trace(dataSet);
+            eventBus.publish(eventBusAddress, dataSet.encode());
+          }
+        });
       });
-    });
+    }
+
+    if(textFile != null) {
+      // Since it is kind of setup we take a chance and open the file even though it is blocking
+      Path textFilePath = FileSystems.getDefault().getPath(textFile);
+      try {
+        textFileReader = Files.newBufferedReader(textFilePath);
+
+        timerID = vertx.setPeriodic(sampleInterval * 1000L,  tid -> {
+          vertx.executeBlocking((Future<String> future) -> {
+            try {
+              future.complete(textFileReader.readLine());
+            } catch(IOException e) {
+              future.fail(e);
+            }
+          }, arTextLine -> {
+            if (arTextLine.succeeded()) {
+              String dataLine = arTextLine.result();
+              if (LOG.isTraceEnabled())
+                LOG.trace(dataLine);
+              if(dataLine!=null) {
+                eventBus.publish(eventBusAddress, dataLine);
+              } else {
+                LOG.info("Read to end of file, stopped sending to the event bus");
+                vertx.cancelTimer(timerID);
+              }
+            } else {
+              LOG.error("Failed to read line: " + arTextLine.cause().getMessage());
+            }
+          });
+        });
+
+      } catch(IOException e) {
+        LOG.error("Failed to open \""+textFilePath.toAbsolutePath()+"\": " + e.getMessage());
+      }
+    }
 
     LOG.info("ReplayVerticle started, publishing to '" + eventBusAddress + "'");
   }
@@ -119,9 +175,16 @@ public class ReplayVerticle extends AbstractVerticle {
   @Override
   public void stop() {
     vertx.cancelTimer(timerID);
+    if(textFileReader != null) {
+      try {
+        textFileReader.close();
+      } catch (IOException e) {
+      }
+    }
+    if(client != null)
+      client.close();
     LOG.info("ReplayVerticle stopped publishing to '" + eventBusAddress + "'");
   }
-
 
   /**
    * Gets a set of data as shown above based on the "next 10 seconds"

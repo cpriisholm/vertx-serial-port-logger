@@ -13,15 +13,17 @@
     },
     {
       "label": "Mqtt monitor",
-      "instances": 0,
+      "instances": 1,
       "verticle": "dk.codedroids.home.heatpump.MqttVerticle",
       "config" : {
         "event_bus": "home.heatpump.data.test",
-        "topic": "stue/(thermomotor|temperature)",
+        "topic": "sensors/livingroom/(thermomotor|temperature)",
         "verbose": true,
-        "server": {
+        "broker": {
           "port": 1883,
-          "host": "0.0.0.0"
+          "host": "broker.something",
+          "username": "...",
+          "password": "..."
         }
       }
     },
@@ -70,20 +72,22 @@
     },
     {
       "label": "Heat Pump Replay verticle",
-      "instances" : 1,
+      "instances" : 0,
       "verticle": "dk.codedroids.home.heatpump.ReplayVerticle",
       "config" : {
         "event_bus": "home.heatpump.data.test",
         "sample_interval": 10,
         "start_time": "2017-01-16 00:00:00",
         "database": {
-          "url": "jdbc:mariadb://gerty.lan:3306/test",
+          "url": "jdbc:mariadb://database.server:3306/test",
           "user": "...",
           "password": "...",
           "driver_class": "org.mariadb.jdbc.Driver",
           "max_pool_size": 10
-        }
+        },
+        "text_file": "src/test/resources/two-hours-of-bus-msgs.txt"
       }
+    }
     }
   ]
 }

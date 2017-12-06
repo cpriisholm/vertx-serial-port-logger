@@ -22,26 +22,27 @@
     div.power p.value { margin: 0px; text-align: center;  }
     div.power p.value:after { content: " A" }
   </style>
+  <script src="/js/i18n_da.js"></script>
 </head>
 <body>
   <div class="wrapper">
-    {% set tempGaugesMarkup = [ { "id":"temp_pump", "label":"Pumperum" }, { "id":"temp_box", "label":"Fyrrum" }, { "id":"temp_feed", "label":"Frem" }, { "id":"temp_ret", "label":"Retur" }, { "id":"temp_tank", "label":"Buffertank" }, { "id":"temp_room", "label":"Stue" } ] %}
+    {% set tempGaugesMarkup = [ { 'id':'temp_pump' }, { "id":"temp_box" }, { "id":"temp_feed" }, { "id":"temp_ret" }, { "id":"temp_tank" }, { "id":"temp_room" } ] %}
     {% for g in tempGaugesMarkup %}
     <div class="gauge temp">
-      <p class="label">{{ g.label }}</p>
+      <p class="label">{{ i18n("messages", "label."+g.id) }}</p>
       <canvas id="{{ g.id }}"></canvas>
       <p class="value" id="{{ g.id }}_txt"></p>
     </div>
     {% endfor %}
-    {% set powrGaugesMarkup = [ { "id":"powr_l1", "label":"Fase 1" }, { "id":"powr_l2", "label":"Fase 2" }, { "id":"powr_l3", "label":"Fase 3" } ] %}
+    {% set powrGaugesMarkup = [ { "id":"powr_l1" }, { "id":"powr_l2" }, { "id":"powr_l3" } ] %}
     {% for g in powrGaugesMarkup %}
     <div class="gauge power">
-      <p class="label">{{ g.label }}</p>
+      <p class="label">{{ i18n("messages", "label."+g.id) }}</p>
       <canvas id="{{ g.id }}"></canvas>
       <p class="value" id="{{ g.id }}_txt"></p>
     </div>
     {% endfor %}
-    <p style="clear:both; padding:20px; font-size:80%;"><b>Status</b><br><span id="status">?</span></p>
+    <p style="clear:both; padding:20px; font-size:80%;"><b>{{ i18n("messages", "label.status") }}</b><br><span id="status">?</span></p>
   </div>
   <script src="/js/gauge.min.js"></script>
   <script src="http://cdn.jsdelivr.net/sockjs/0.3.4/sockjs.min.js"></script>
@@ -149,16 +150,16 @@
         });
 
         if(retryAttempts++ < MAX_RETRY) {
-          document.getElementById('status').innerHTML = 'Ikke forbundet med server, forsøger at forbinde...';
+          document.getElementById('status').innerHTML = '{{ i18n("messages", "label.connection_trying") }}';
           setTimeout(setupEventBus, {{ context.get("reconnectInterval") }}); // Give the server some time to come back
         } else {
-          document.getElementById('status').innerHTML = 'Ikke forbundet med server, opdater siden for at forbinde...';
+          document.getElementById('status').innerHTML = '{{ i18n("messages", "label.connection_failed") }}';
         }
       };
 
       eb.onopen = function() {
         // set a handler to receive a message
-        document.getElementById('status').innerHTML = 'Forbundet med server...';
+        document.getElementById('status').innerHTML = '{{ i18n("messages", "label.connection_ok") }}';
         retryAttempts = 0; // reset
 
         eb.registerHandler('{{ context.get("eventBusAddress") }}', function (error, message) {
@@ -189,8 +190,8 @@
           if(data['temp_thmo']!=null)
             thermoMotor = (data['temp_thmo'] > 1);
 
-          var msg = 'Sidst opdateret:<br>'+new Date().toLocaleString();
-          msg += '<br>Gulvarmeventil: ' + (thermoMotor ? 'ÅBEN' : 'lukket');
+          var msg = '{{ i18n("messages", "label.updated_at") }}<br>'+new Date().toLocaleString();
+          msg += '<br>{{ i18n("messages", "label.floor_valve") }} ' + (thermoMotor ? '{{ i18n("messages", "value.floor_valve_on") }}' : '{{ i18n("messages", "value.floor_valve_off") }}');
           document.getElementById('status').innerHTML = msg;
 
         });

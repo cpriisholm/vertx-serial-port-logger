@@ -8,10 +8,10 @@ repositories {
   jcenter()
 }
 
-version = '1.6'
+version = '1.8'
 mainClassName = 'io.vertx.core.Launcher' // or 'dk.codedroids.home.heatpump.MainVerticle'
 
-def vertxVersion = '3.4.2'
+def vertxVersion = '3.5.0'
 def mainVerticleName = 'dk.codedroids.home.heatpump.MainVerticle'
 def watchForChange = 'src/**/*'
 def doOnChange = './gradlew classes'
@@ -24,7 +24,7 @@ dependencies {
   compile "io.vertx:vertx-web-templ-pebble:$vertxVersion"
   compile "io.vertx:vertx-lang-groovy:$vertxVersion"
   compile "io.vertx:vertx-jdbc-client:$vertxVersion"
-  compile "io.vertx:vertx-mqtt-server:$vertxVersion"
+  compile "io.vertx:vertx-mqtt:$vertxVersion"
   //compile group: 'org.rxtx', name: 'rxtx', version: '2.2pre2', ext: 'pom'
   // openSUSE has this in a number of extra repos - Education and CrossToolChain:avr among others (:
   // zypper ar --name Education --refresh http://download.opensuse.org/repositories/Education/openSUSE_Leap_42.2/ education

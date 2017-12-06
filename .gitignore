@@ -2,6 +2,8 @@
 ### Note, now specifically ignores idea and eclipse files - gradle.build should be the one to control everything
 ###
 
+*.orig
+
 .groovy
 gradle.xml
 

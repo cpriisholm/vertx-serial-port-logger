@@ -1,0 +1,35 @@
+{
+  "deploy_verticles" : [
+    {
+      "label": "Heat Pump Logger (only logging)",
+      "instances" : 1,
+      "verticle": "dk.codedroids.home.heatpump.LoggerVerticle",
+      "config" : {
+        "event_bus" : "home.heatpump.data.test"
+      }
+    },
+    {
+      "label": "Heat Pump Panel",
+      "instances" : 1,
+      "verticle": "dk.codedroids.home.heatpump.PanelVerticle",
+      "config" : {
+        "event_bus": "home.heatpump.data.test",
+        "event_bus_url": "http://localhost:9000/eventbus",
+        "reconnect_interval": 10,
+        "http_caching": false,
+        "http_port": 9000
+      }
+    },
+    {
+      "label": "Heat Pump Replay verticle",
+      "instances" : 1,
+      "verticle": "dk.codedroids.home.heatpump.ReplayVerticle",
+      "config" : {
+        "event_bus": "home.heatpump.data.test",
+        "sample_interval": 1,
+        "start_time": "2017-01-16 00:00:00",
+        "text_file": "src/test/resources/two-hours-of-bus-msgs.txt"
+      }
+    }
+  ]
+}

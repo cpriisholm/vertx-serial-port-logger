@@ -65,8 +65,12 @@ public class SerialVerticle extends AbstractVerticle {
   private String echoEventBusAddress;
   private SerialInput serialWrapper;
 
+  public SerialVerticle() {
+    super();
+  }
+
   /** To allow for explicit wrapper to be injected, used for testing */
-  SerialVerticle(SerialInput serialWrapper) {
+  public SerialVerticle(SerialInput serialWrapper) {
     super();
     this.serialWrapper = serialWrapper;
   }

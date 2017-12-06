@@ -115,18 +115,14 @@ public class LoggerVerticle extends AbstractVerticle {
 
 
   Future<Void> saveData(JsonArray dataSet) {
-    System.out.println("XXX");
     return saveData(dataSet, client);
   }
   /**
    * Set the timestamp and create a batch insert
    */
   Future<Void> saveData(JsonArray dataSet, JDBCClient client) {
-    System.out.println("ENRTY");
 
     Future<Void> future = Future.future();
-
-    System.out.println("ENRTY2");
 
     String ts = timestampFormatter.format(new Date());
 
@@ -148,14 +144,11 @@ public class LoggerVerticle extends AbstractVerticle {
         .add(((JsonObject)data).getDouble("d")) )
       .collect(Collectors.toList());
 
-    System.out.println("START");
     client.getConnection( arConnection -> {
       if (arConnection.failed()) {
         LOG.error(arConnection.cause().getMessage());
         future.fail(arConnection.cause().getMessage());
       } else {
-        System.out.println("GET CONN");
-
         SQLConnection connection = arConnection.result();
         // If rows for both tables do them nested, else just do the one that has rows
         if(tempParams.size() > 0 && powrParams.size() > 0) {
@@ -178,8 +171,6 @@ public class LoggerVerticle extends AbstractVerticle {
                       throw new java.lang.RuntimeException(done.cause());
                     }
                   });
-                  System.out.println("COPLETE 1");
-
                   future.complete();
                 }
               });
